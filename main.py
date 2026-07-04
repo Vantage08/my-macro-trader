@@ -2,8 +2,9 @@ import json
 import requests
 
 # --- CONFIGURATION ---
-SYMBOL = "ETHUSDT"
-INTERVAL = "1d"  # Binance uses lowercase for daily intervals
+# CoinGecko uses lowercase IDs (ethereum) rather than ticker symbols
+COINGECKO_ID = "ethereum" 
+VS_CURRENCY = "usd"
 
 # WunderTrading Webhook Configuration
 WT_URL = "https://wtalerts.com/bot/other"
@@ -30,29 +31,33 @@ def calculate_ema(prices, period):
     return ema
 
 def run_strategy():
-    print(f"Executing daily strategy check for {SYMBOL} via Binance API...")
+    print(f"Executing daily strategy check for ETH via CoinGecko Public API...")
     
-    # Using Binance Futures Public Market Data API Endpoint
-    url = f"https://fapi.binance.com/fapi/v1/klines?symbol={SYMBOL}&interval={INTERVAL}&limit=50"
+    # Fetch 30 days of daily OHLC candles (Format: [timestamp, open, high, low, close])
+    url = f"https://api.coingecko.com/api/v3/coins/{COINGECKO_ID}/ohlc?vs_currency={VS_CURRENCY}&days=30"
     try:
         response = requests.get(url, timeout=10)
         
         if response.status_code != 200:
-            print(f"Binance server returned a bad status code: {response.status_code}")
+            print(f"Aggregator server returned a bad status code: {response.status_code}")
             print(f"Raw response: {response.text}")
             return
             
         try:
-            klines = response.json()
+            ohlc_data = response.json()
         except Exception as json_err:
-            print(f"JSON Parsing failed. Raw response data was: {response.text}")
-            print(f"Parsing error: {json_err}")
+            print(f"JSON Parsing failed: {json_err}")
             return
 
-        # Binance arrays return data sorted from oldest to newest directly
-        closes = [float(k[4]) for k in klines]
+        if not ohlc_data or not isinstance(ohlc_data, list):
+            print("Invalid or empty data format received.")
+            return
+
+        # Extract closing prices (Index 4 in CoinGecko's OHLC format)
+        closes = [float(candle[4]) for candle in ohlc_data]
         
-        last_closed_candle = klines[-1]
+        # Identify the latest closed daily candle
+        last_closed_candle = ohlc_data[-1]
         open_price = float(last_closed_candle[1])
         close_price = float(last_closed_candle[4])
         
